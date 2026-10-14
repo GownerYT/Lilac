@@ -1,16 +1,23 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactElement } from 'react'
+import { browserStore } from './browserStore'
 
-function FolderTree({ folders, selectedId, onSelect, onAdd, onRename, onRemove }: {
+// Vite can render the interface in a normal browser during development. The
+// Electron preload bridge exists only inside the desktop shell, so use a local
+// browser store there without weakening the production Electron boundary.
+const storeApi = window.lilac ?? browserStore
+
+function FolderTree({ folders, selectedId, onSelect, onAddNote, onAddChild, onRename, onRemove }: {
   folders: Folder[]; selectedId: string | null; onSelect: (id: string) => void
-  onAdd: (parentId: string | null) => void; onRename: (folder: Folder) => void; onRemove: (folder: Folder) => void
+  onAddNote: (folderId: string) => void; onAddChild: (folder: Folder) => void; onRename: (folder: Folder) => void; onRemove: (folder: Folder) => void
 }) {
   const children = (parentId: string | null) => folders.filter(folder => folder.parentId === parentId)
   const renderBranch = (parentId: string | null, depth = 0): ReactElement[] => children(parentId).flatMap(folder => [
     <div className={`folder-row ${selectedId === folder.id ? 'is-selected' : ''}`} style={{ paddingLeft: 16 + depth * 18 }} key={folder.id}>
       <button className="folder-label" onClick={() => onSelect(folder.id)} title={folder.name}><span aria-hidden="true">⌁</span>{folder.name}</button>
       <div className="row-actions">
-        <button aria-label={`Añadir subcarpeta a ${folder.name}`} onClick={() => onAdd(folder.id)}>＋</button>
+        <button aria-label={`Nueva nota en ${folder.name}`} title="Nueva nota" onClick={() => onAddNote(folder.id)}>＋</button>
+        <button aria-label={`Añadir subcarpeta a ${folder.name}`} title="Nueva subcarpeta" onClick={() => onAddChild(folder)}>⌁</button>
         <button aria-label={`Renombrar ${folder.name}`} onClick={() => onRename(folder)}>✎</button>
         <button aria-label={`Eliminar ${folder.name}`} onClick={() => onRemove(folder)}>×</button>
       </div>
@@ -25,9 +32,19 @@ export default function App() {
   const [folderId, setFolderId] = useState<string | null>(null)
   const [noteId, setNoteId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const [folderDialog, setFolderDialog] = useState<{ parentId: string | null; folder?: Folder } | null>(null)
+  const [folderName, setFolderName] = useState('')
+  const [error, setError] = useState('')
 
-  const refresh = (next: Promise<Store>) => next.then(setStore).catch(error => window.alert(error.message))
-  useEffect(() => { refresh(window.lilac.load()) }, [])
+  const refresh = useCallback((next: Promise<Store>) => next.then(nextStore => {
+    setError('')
+    setStore(nextStore)
+    return nextStore
+  }).catch((reason: unknown) => {
+    setError(reason instanceof Error ? reason.message : 'No se pudo guardar el cambio.')
+    throw reason
+  }), [])
+  useEffect(() => { refresh(storeApi.load()).catch(() => undefined) }, [refresh])
   useEffect(() => { if (store && !folderId) setFolderId(store.folders[0]?.id ?? null) }, [store, folderId])
   useEffect(() => { if (store && folderId && !store.folders.some(folder => folder.id === folderId)) { setFolderId(store.folders[0]?.id ?? null); setNoteId(null) } }, [store, folderId])
 
@@ -38,36 +55,48 @@ export default function App() {
   const searchNotes = normalizedQuery ? (store?.notes.filter(note => note.title.toLocaleLowerCase('es-ES').includes(normalizedQuery)) ?? []) : []
 
   function selectFolder(id: string) { setFolderId(id); setNoteId(null) }
-  function addFolder(parentId: string | null) {
-    const name = window.prompt(parentId ? 'Nombre de la subcarpeta' : 'Nombre de la carpeta')
-    if (name?.trim()) refresh(window.lilac.createFolder(name, parentId))
+  function openFolderDialog(parentId: string | null, folder?: Folder) {
+    setFolderName(folder?.name ?? '')
+    setFolderDialog({ parentId, folder })
   }
-  function renameFolder(folder: Folder) {
-    const name = window.prompt('Nuevo nombre', folder.name)
-    if (name?.trim() && name !== folder.name) refresh(window.lilac.renameFolder(folder.id, name))
+  async function saveFolderDialog() {
+    if (!folderDialog || !folderName.trim()) return
+    try {
+      const next = folderDialog.folder
+        ? storeApi.renameFolder(folderDialog.folder.id, folderName)
+        : storeApi.createFolder(folderName, folderDialog.parentId)
+      await refresh(next)
+      setFolderDialog(null)
+    } catch { /* The inline error is already set by refresh. */ }
   }
   function removeFolder(folder: Folder) {
     if (window.confirm(`¿Eliminar “${folder.name}” y todo su contenido? Esta acción no se puede deshacer.`)) {
       if (folderId === folder.id) { setFolderId(null); setNoteId(null) }
-      refresh(window.lilac.removeFolder(folder.id))
+      refresh(storeApi.removeFolder(folder.id)).catch(() => undefined)
     }
   }
-  function addNote() {
-    if (!folderId) return
-    const title = window.prompt('Título de la nota', 'Nota sin título')
-    if (title !== null) refresh(window.lilac.createNote(folderId, title).then(next => { setNoteId(next.notes[next.notes.length - 1]?.id ?? null); return next }))
+  async function addNote(targetFolderId = folderId) {
+    if (!targetFolderId) return
+    try {
+      const next = await refresh(storeApi.createNote(targetFolderId, 'Nueva nota'))
+      const created = next.notes[next.notes.length - 1]
+      setFolderId(targetFolderId)
+      setNoteId(created?.id ?? null)
+    } catch { /* The inline error is already set by refresh. */ }
   }
   function removeNote(note: Note) {
     if (window.confirm(`¿Eliminar la nota “${note.title}”? Esta acción no se puede deshacer.`)) {
-      setNoteId(null); refresh(window.lilac.removeNote(note.id))
+      setNoteId(null); refresh(storeApi.removeNote(note.id)).catch(() => undefined)
     }
   }
-  function saveNote(note: Note, title: string, content: string) { refresh(window.lilac.updateNote(note.id, title, content)) }
+  const saveNote = useCallback((note: Note, title: string, content: string) => {
+    refresh(storeApi.updateNote(note.id, title, content)).catch(() => undefined)
+  }, [refresh])
 
   if (!store) return <main className="loading">Abriendo Lilac…</main>
   function openSearchNote(note: Note) { setFolderId(note.folderId); setNoteId(note.id); setQuery('') }
   const currentTheme = store.preferences.theme
-  function setTheme() { refresh(window.lilac.setTheme(currentTheme === 'light' ? 'dark' : 'light')) }
+  function setTheme() { refresh(storeApi.setTheme(currentTheme === 'light' ? 'dark' : 'light')).catch(() => undefined) }
 
   return <main className={`app-shell theme-${currentTheme}`}>
     <header className="topbar"><div className="brand"><span className="brand-dot" />Lilac</div><span className="topbar-subtitle">Tus notas, en orden</span><button className="theme-toggle" onClick={setTheme} aria-label="Cambiar tema" title="Cambiar tema">{currentTheme === 'light' ? '◐ Oscuro' : '◑ Claro'}</button></header>
@@ -78,14 +107,16 @@ export default function App() {
         {searchNotes.map(note => <button key={`note-${note.id}`} onClick={() => openSearchNote(note)}><span>Nota · {store.folders.find(folder => folder.id === note.folderId)?.name ?? 'Sin carpeta'}</span>{note.title}</button>)}
         {!searchFolders.length && !searchNotes.length && <p>Sin resultados.</p>}
       </div>}
-      <div className="sidebar-heading"><span>CARPETAS</span><button className="icon-button" onClick={() => addFolder(null)} aria-label="Nueva carpeta">＋</button></div>
-      <nav aria-label="Carpetas"><FolderTree folders={store.folders} selectedId={folderId} onSelect={selectFolder} onAdd={addFolder} onRename={renameFolder} onRemove={removeFolder} /></nav>
+      <div className="sidebar-heading"><span>CARPETAS</span><button className="icon-button" onClick={() => openFolderDialog(null)} aria-label="Nueva carpeta" title="Nueva carpeta">＋</button></div>
+      <nav aria-label="Carpetas"><FolderTree folders={store.folders} selectedId={folderId} onSelect={selectFolder} onAddNote={addNote} onAddChild={folder => openFolderDialog(folder.id)} onRename={folder => openFolderDialog(folder.parentId, folder)} onRemove={removeFolder} /></nav>
     </aside>
     <section className="note-list">
-      <div className="panel-heading"><div><span className="eyebrow">NOTAS</span><h1>{store.folders.find(folder => folder.id === folderId)?.name ?? 'Selecciona una carpeta'}</h1></div><button className="primary-button" disabled={!folderId} onClick={addNote}>Nueva nota</button></div>
+      <div className="panel-heading"><div><span className="eyebrow">NOTAS</span><h1>{store.folders.find(folder => folder.id === folderId)?.name ?? 'Selecciona una carpeta'}</h1></div><button className="primary-button" disabled={!folderId} onClick={() => { void addNote() }}>Nueva nota</button></div>
       <div className="notes-scroll">{notes.length ? notes.map(note => <button className={`note-card ${note.id === noteId ? 'is-active' : ''}`} key={note.id} onClick={() => setNoteId(note.id)}><strong>{note.title}</strong><span>{note.content || 'Sin contenido'}</span><time>{new Date(note.updatedAt).toLocaleDateString('es-ES')}</time></button>) : <p className="empty-state">Esta carpeta todavía no tiene notas.</p>}</div>
     </section>
     <section className="editor">{selectedNote ? <NoteEditor note={selectedNote} onSave={saveNote} onDelete={removeNote} /> : <div className="editor-empty"><span>✦</span><h2>Elige o crea una nota</h2><p>Selecciona una nota de la lista para empezar a escribir.</p></div>}</section>
+    {error && <div className="save-error" role="alert">{error}</div>}
+    {folderDialog && <div className="dialog-backdrop" role="presentation"><form className="folder-dialog" onSubmit={event => { event.preventDefault(); void saveFolderDialog() }}><h2>{folderDialog.folder ? 'Renombrar carpeta' : folderDialog.parentId ? 'Nueva subcarpeta' : 'Nueva carpeta'}</h2><input autoFocus value={folderName} onChange={event => setFolderName(event.target.value)} placeholder="Nombre de la carpeta" aria-label="Nombre de la carpeta" /><div><button type="button" onClick={() => setFolderDialog(null)}>Cancelar</button><button className="primary-button" type="submit" disabled={!folderName.trim()}>Guardar</button></div></form></div>}
   </main>
 }
 
