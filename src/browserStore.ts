@@ -4,7 +4,7 @@ function emptyStore(): Store {
   return {
     folders: [{ id: 'inbox', name: 'Notas', parentId: null }],
     notes: [],
-    preferences: { theme: 'light' }
+    preferences: { theme: 'dark' }
   }
 }
 

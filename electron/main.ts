@@ -17,7 +17,7 @@ function dataFile() {
 }
 
 function emptyStore(): Store {
-  return { folders: [{ id: 'inbox', name: 'Notas', parentId: null }], notes: [], preferences: { theme: 'light' } }
+  return { folders: [{ id: 'inbox', name: 'Notas', parentId: null }], notes: [], preferences: { theme: 'dark' } }
 }
 
 function loadStore(): Store {
@@ -96,8 +96,14 @@ function registerIpc() {
   ipcMain.handle('preferences:theme', (_event, theme: Theme) => update(store => { store.preferences.theme = theme }))
 }
 
+function iconPath() {
+  return app.isPackaged
+    ? join(__dirname, '../dist/lilac_icon.ico')
+    : join(app.getAppPath(), 'public', 'lilac_icon.ico')
+}
+
 async function createWindow() {
-  mainWindow = new BrowserWindow({ width: 1180, height: 760, minWidth: 760, minHeight: 520, backgroundColor: '#faf9fd', webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false } })
+  mainWindow = new BrowserWindow({ width: 1180, height: 760, minWidth: 760, minHeight: 520, backgroundColor: '#1e1a25', icon: iconPath(), webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false } })
   if (process.env.VITE_DEV_SERVER_URL) await mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
   else await mainWindow.loadFile(join(__dirname, '../dist/index.html'))
 }

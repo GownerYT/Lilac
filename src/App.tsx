@@ -7,6 +7,10 @@ import { browserStore } from './browserStore'
 // browser store there without weakening the production Electron boundary.
 const storeApi = window.lilac ?? browserStore
 
+function FolderIcon() {
+  return <svg className="folder-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" /></svg>
+}
+
 function FolderTree({ folders, selectedId, onSelect, onAddNote, onAddChild, onRename, onRemove }: {
   folders: Folder[]; selectedId: string | null; onSelect: (id: string) => void
   onAddNote: (folderId: string) => void; onAddChild: (folder: Folder) => void; onRename: (folder: Folder) => void; onRemove: (folder: Folder) => void
@@ -14,10 +18,10 @@ function FolderTree({ folders, selectedId, onSelect, onAddNote, onAddChild, onRe
   const children = (parentId: string | null) => folders.filter(folder => folder.parentId === parentId)
   const renderBranch = (parentId: string | null, depth = 0): ReactElement[] => children(parentId).flatMap(folder => [
     <div className={`folder-row ${selectedId === folder.id ? 'is-selected' : ''}`} style={{ paddingLeft: 16 + depth * 18 }} key={folder.id}>
-      <button className="folder-label" onClick={() => onSelect(folder.id)} title={folder.name}><span aria-hidden="true">⌁</span>{folder.name}</button>
+      <button className="folder-label" onClick={() => onSelect(folder.id)} title={folder.name}><FolderIcon />{folder.name}</button>
       <div className="row-actions">
         <button aria-label={`Nueva nota en ${folder.name}`} title="Nueva nota" onClick={() => onAddNote(folder.id)}>＋</button>
-        <button aria-label={`Añadir subcarpeta a ${folder.name}`} title="Nueva subcarpeta" onClick={() => onAddChild(folder)}>⌁</button>
+        <button aria-label={`Añadir subcarpeta a ${folder.name}`} title="Nueva subcarpeta" onClick={() => onAddChild(folder)}><FolderIcon /></button>
         <button aria-label={`Renombrar ${folder.name}`} onClick={() => onRename(folder)}>✎</button>
         <button aria-label={`Eliminar ${folder.name}`} onClick={() => onRemove(folder)}>×</button>
       </div>
@@ -99,7 +103,7 @@ export default function App() {
   function setTheme() { refresh(storeApi.setTheme(currentTheme === 'light' ? 'dark' : 'light')).catch(() => undefined) }
 
   return <main className={`app-shell theme-${currentTheme}`}>
-    <header className="topbar"><div className="brand"><span className="brand-dot" />Lilac</div><span className="topbar-subtitle">Tus notas, en orden</span><button className="theme-toggle" onClick={setTheme} aria-label="Cambiar tema" title="Cambiar tema">{currentTheme === 'light' ? '◐ Oscuro' : '◑ Claro'}</button></header>
+    <header className="topbar"><div className="brand"><svg className="brand-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 3v18" /><path d="M12 8h4" /><path d="M12 12h4" /><path d="M12 16h4" /></svg>Lilac</div><span className="topbar-subtitle">Tus notas, en orden</span><button className="theme-toggle" onClick={setTheme} aria-label="Cambiar tema" title="Cambiar tema">{currentTheme === 'light' ? '◐ Oscuro' : '◑ Claro'}</button></header>
     <aside className="sidebar">
       <label className="search-box"><span aria-hidden="true">⌕</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Buscar…" aria-label="Buscar carpetas y notas" /></label>
       {normalizedQuery && <div className="search-results" aria-label="Resultados de búsqueda">

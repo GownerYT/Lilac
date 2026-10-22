@@ -15,7 +15,7 @@
 ## 3. Interfaz y diseño
 
 - Diseño limpio, minimalista y fácil de utilizar.
-- Tema claro por defecto, con fondo principalmente blanco.
+- Tema oscuro por defecto, manteniendo la paleta morada suave.
 - Menú superior y panel lateral izquierdo en tonos morados suaves.
 - Modo oscuro seleccionable desde la interfaz.
 - Distribución principal en dos zonas:

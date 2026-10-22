@@ -45,6 +45,7 @@
       }
     ],
     "win": {
+      "icon": "public/lilac_icon.ico",
       "target": [
         "portable"
       ]
